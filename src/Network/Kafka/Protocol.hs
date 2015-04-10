@@ -3,79 +3,102 @@
 -- file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
-{-# LANGUAGE DeriveGeneric  #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
 
 
--- | Implementation of the <http://kafka.apache.org Kafka> wire protocol (as of
--- version 0.8.2)
+-- | Implementation of the <http://kafka.apache.org Kafka> wire protocol
 --
 -- cf. <https://cwiki.apache.org/confluence/display/KAFKA/A+Guide+To+The+Kafka+Protocol>
 --
 module Network.Kafka.Protocol
-    ( -- * "Primitive" types
+    ( -- * \"Primitive\" types
       Bytes                         (..)
     , ShortString                   (..)
     , Array                         (..)
 
     -- * Wrappers
-    , RequestMessage                (..)
-    , ResponseMessage               (..)
+    , Request                       ( rq_apiKey
+                                    , rq_apiVersion
+                                    , rq_correlationId
+                                    , rq_clientId
+                                    , rq_request
+                                    )
+    , mkRequest
+    , Response                      (..)
     , ApiKey                        (..)
+    , apiKey
+    , ApiVersion                    (..)
+    , apiVersion
 
     -- * Messages
     , Compression                   (..)
     , MessageSet                    (..)
-    , Message
+    , Message                       ( msg_crc
+                                    , msg_magic
+                                    , msg_attrs
+                                    , msg_key
+                                    , msg_value
+                                    )
     , mkMessage
 
     -- * Error codes
     , ErrorCode                     (..)
 
     -- * Type aliases
-    , Partition
-    , MessageSetSize
     , ConsumerGroup
-    , Offset
-    , TopicKeyed
-    , NodeId
     , Host
+    , MessageSetSize
+    , NodeId
+    , Offset
+    , Partition
     , Port
+    , TopicKeyed
+    , TopicName
 
     -- * RPCs
-    , Response                      (..)
-
     , FetchRequest                  (..)
+    , FetchResponse                 (..)
     , FetchResponsePayload          (..)
 
     , ProduceRequest                (..)
     , ProduceRequestPayload         (..)
+    , ProduceResponse               (..)
     , ProduceResponsePayload        (..)
 
     , OffsetRequest                 (..)
     , OffsetRequestPayload          (..)
+    , OffsetResponse                (..)
     , OffsetResponsePayload         (..)
 
     , OffsetCommitRequest           (..)
     , OffsetCommitRequestPayload    (..)
-    , OffsetCommitRequest_V1        (..)
-    , OffsetCommitRequestPayload_V1 (..)
-    , OffsetCommitRequest_V2        (..)
+    , OffsetCommitResponse          (..)
     , OffsetCommitResponsePayload   (..)
 
     , OffsetFetchRequest            (..)
+    , OffsetFetchResponse           (..)
     , OffsetFetchResponsePayload    (..)
 
-    -- * Metadata
+    -- ** Metadata
     , Broker                        (..)
     , MetadataRequest               (..)
+    , MetadataResponse              (..)
     , ConsumerMetadataRequest       (..)
+    , ConsumerMetadataResponse      (..)
     , TopicMetadata                 (..)
     , PartitionMetadata             (..)
 
-    -- * Consumer coordination
+    -- ** Consumer coordination
     , HeartbeatRequest              (..)
+    , HeartbeatResponse             (..)
     , JoinGroupRequest              (..)
-    , JoinGroupResponsePayload      (..)
+    , JoinGroupResponse             (..)
     )
 where
 
@@ -86,6 +109,7 @@ import           Data.ByteString        (ByteString)
 import qualified Data.ByteString        as BS
 import           Data.Int
 import           Data.Maybe
+import           Data.Proxy
 import           Data.Serialize
 import           Data.Text              (Text)
 import qualified Data.Text              as T
@@ -93,6 +117,7 @@ import           Data.Text.Encoding
 import           Data.Vector            (Vector)
 import qualified Data.Vector            as V
 import           GHC.Generics
+import           GHC.TypeLits
 import           Network.Kafka.Internal
 
 
@@ -149,60 +174,15 @@ instance Serialize a => Serialize (Array a) where
 -- wrappers
 --
 
-
-data ApiKey
-    = ProduceKey
-    | FetchKey
-    | OffsetsKey
-    | MetadataKey
-    {- hide internal RPCs
-    | LeaderAndIsrKey
-    | StopReplicaKey
-    | UpdateMetadataKey
-    | ControlledShutdownKey
-    -}
-    | OffsetCommitKey
-    | OffsetFetchKey
-    | ConsumerMetadataKey
-    | JoinGroupKey
-    | HeartbeatKey
-    deriving (Eq, Show)
-
-instance Serialize ApiKey where
-    put k = put $ case k of
-        ProduceKey          -> 0 :: Int16
-        FetchKey            -> 1
-        OffsetsKey          -> 2
-        MetadataKey         -> 3
-        OffsetCommitKey     -> 8
-        OffsetFetchKey      -> 9
-        ConsumerMetadataKey -> 10
-        JoinGroupKey        -> 11
-        HeartbeatKey        -> 12
-
-    get = (get :: Get Int16) >>= \k -> case k of
-        0  -> return ProduceKey
-        1  -> return FetchKey
-        2  -> return OffsetsKey
-        3  -> return MetadataKey
-        8  -> return OffsetCommitKey
-        9  -> return OffsetFetchKey
-        10 -> return ConsumerMetadataKey
-        11 -> return JoinGroupKey
-        12 -> return HeartbeatKey
-
-        _  -> fail "Invalid Api Key"
-
-
-data RequestMessage a = RequestMessage
-    { rq_apiKey        :: !Int16
-    , rq_apiVersion    :: !Int16
+data Request a = Request
+    { rq_apiKey        :: !ApiKey
+    , rq_apiVersion    :: !ApiVersion
     , rq_correlationId :: !Int32
     , rq_clientId      :: !ShortString
     , rq_request       :: !a
     } deriving (Eq, Show)
 
-instance Serialize a => Serialize (RequestMessage a) where
+instance Serialize a => Serialize (Request a) where
     put rq = do
         put (fromIntegral (BS.length rq') :: Int32)
         put rq'
@@ -214,15 +194,28 @@ instance Serialize a => Serialize (RequestMessage a) where
         bs  <- getBytes (fromIntegral len)
         either fail return $ runGet get' bs
       where
-        get' = RequestMessage <$> get <*> get <*> get <*> get <*> get
+        get' = Request <$> get <*> get <*> get <*> get <*> get
+
+mkRequest :: (KnownNat key, KnownNat version)
+          => Int32
+          -> ShortString
+          -> a key version
+          -> Request (a key version)
+mkRequest correlationId clientId rq = Request
+    { rq_apiKey        = apiKey rq
+    , rq_apiVersion    = apiVersion rq
+    , rq_correlationId = correlationId
+    , rq_clientId      = clientId
+    , rq_request       = rq
+    }
 
 
-data ResponseMessage = ResponseMessage
+data Response a = Response
     { rs_correlationId :: !Int32
-    , rs_response      :: !Response
+    , rs_response      :: !a
     } deriving (Eq, Show)
 
-instance Serialize ResponseMessage where
+instance Serialize a => Serialize (Response a) where
     put rs = do
         put (fromIntegral (BS.length rs') :: Int32)
         put rs'
@@ -234,7 +227,29 @@ instance Serialize ResponseMessage where
         bs  <- getBytes (fromIntegral len)
         either fail return $ runGet get' bs
       where
-        get' = ResponseMessage <$> get <*> get
+        get' = Response <$> get <*> get
+
+
+newtype ApiKey = ApiKey Int16
+    deriving (Eq, Show, Generic)
+
+instance Serialize ApiKey
+
+apiKey :: forall a key version. (KnownNat key, KnownNat version)
+       => a key version
+       -> ApiKey
+apiKey _ = ApiKey . fromInteger $ natVal (Proxy :: Proxy key)
+
+
+newtype ApiVersion = ApiVersion Int16
+    deriving (Eq, Show, Generic)
+
+instance Serialize ApiVersion
+
+apiVersion :: forall a key version. (KnownNat key, KnownNat version)
+            => a key version
+            -> ApiVersion
+apiVersion _ = ApiVersion . fromInteger $ natVal (Proxy :: Proxy version)
 
 
 --
@@ -279,7 +294,6 @@ mkMessage key val codec =
 
 data ErrorCode
     = NoError
-    | Unknown
     | OffsetOutOfRange
     | InvalidMessage
     | UnknownTopicOrPartition
@@ -300,7 +314,6 @@ data ErrorCode
 instance Serialize ErrorCode where
     put e = put $ case e of
         NoError                         -> 0   :: Int16
-        Unknown                         -> -1
         OffsetOutOfRange                -> 1
         InvalidMessage                  -> 2
         UnknownTopicOrPartition         -> 3
@@ -317,25 +330,26 @@ instance Serialize ErrorCode where
         ConsumerCoordinatorNotAvailable -> 15
         NotCoordinatorForConsumer       -> 16
 
-    get = (get :: Get Int16) >>= \code -> return $ case code of
-        0  -> NoError
-        1  -> OffsetOutOfRange
-        2  -> InvalidMessage
-        3  -> UnknownTopicOrPartition
-        4  -> InvalidMessageSize
-        5  -> LeaderNotAvailable
-        6  -> NotLeaderForPartition
-        7  -> RequestTimedOut
-        8  -> BrokerNotAvailable
-        9  -> ReplicaNotAvailable
-        10 -> MessageSizeTooLarge
-        11 -> StaleControllerEpoch
-        12 -> OffsetMetadataTooLarge
-        14 -> OffsetsLoadInProgress
-        15 -> ConsumerCoordinatorNotAvailable
-        16 -> NotCoordinatorForConsumer
+    get = (get :: Get Int16) >>= \code -> case code of
+        0  -> return NoError
+        1  -> return OffsetOutOfRange
+        2  -> return InvalidMessage
+        3  -> return UnknownTopicOrPartition
+        4  -> return InvalidMessageSize
+        5  -> return LeaderNotAvailable
+        6  -> return NotLeaderForPartition
+        7  -> return RequestTimedOut
+        8  -> return BrokerNotAvailable
+        9  -> return ReplicaNotAvailable
+        10 -> return MessageSizeTooLarge
+        11 -> return StaleControllerEpoch
+        12 -> return OffsetMetadataTooLarge
+        14 -> return OffsetsLoadInProgress
+        15 -> return ConsumerCoordinatorNotAvailable
+        16 -> return NotCoordinatorForConsumer
 
-        _  -> Unknown
+        _  -> fail "Unkown error code"
+
 
 --
 -- RPCs
@@ -354,13 +368,18 @@ type Port           = Int32
 type TopicKeyed a = Array (TopicName, Array a)
 
 
-data ProduceRequest = ProduceRequest
-    { prq_requiredAcks :: !Int16
-    , prq_timeout      :: !Int32
-    , prq_payload      :: !(TopicKeyed ProduceRequestPayload)
-    } deriving (Eq, Show, Generic)
+--
+-- Produce
+--
+data ProduceRequest (key :: Nat) (version :: Nat) where
+    ProduceRequest :: { prq_requiredAcks :: !Int16
+                      , prq_timeout      :: !Int32
+                      , prq_payload      :: !(TopicKeyed ProduceRequestPayload)
+                      }
+                   -> ProduceRequest 1 0
 
-instance Serialize ProduceRequest
+deriving instance Eq   (ProduceRequest k v)
+deriving instance Show (ProduceRequest k v)
 
 data ProduceRequestPayload = ProduceRequestPayload
     { prqp_partition :: !Partition
@@ -368,162 +387,8 @@ data ProduceRequestPayload = ProduceRequestPayload
     , prqp_messages  :: !MessageSet
     } deriving (Eq, Show, Generic)
 
-instance Serialize ProduceRequestPayload
-
-
-data FetchRequest = FetchRequest
-    { frq_replicaId   :: !NodeId
-    , frq_maxWaitTime :: !Int32
-    , frq_minBytes    :: !Int32
-    , frq_topic       :: !TopicName
-    , frq_partition   :: !Partition
-    , frq_offset      :: !Int64
-    , frq_maxBytes    :: !Int32
-    } deriving (Eq, Show, Generic)
-
-instance Serialize FetchRequest
-
-
-data OffsetRequest = OffsetRequest
-    { orq_replicaId :: !NodeId
-    , orq_payload   :: !(TopicKeyed OffsetRequestPayload)
-    } deriving (Eq, Show, Generic)
-
-instance Serialize OffsetRequest
-
-
-data OffsetRequestPayload = OffsetRequestPayload
-    { orqp_partition  :: !Partition
-    , orqp_time       :: !Int64
-    , orqp_maxOffsets :: !Int32
-    } deriving (Eq, Show, Generic)
-
-instance Serialize OffsetRequestPayload
-
-
-data MetadataRequest = MetadataRequest
-    { mrq_topics :: !(Array TopicName)
-    } deriving (Eq, Show, Generic)
-
-instance Serialize MetadataRequest
-
-
---
--- v0 (kafka 0.8.1)
---
-data OffsetCommitRequest = OffsetCommitRequest
-    { ocrq_consumerGroup :: !ConsumerGroup
-    , ocrq_payload       :: !(TopicKeyed OffsetCommitRequestPayload)
-    } deriving (Eq, Show, Generic)
-
-instance Serialize OffsetCommitRequest
-
-
-data OffsetCommitRequestPayload = OffsetCommitRequestPayload
-    { ocrqp_partition :: !Partition
-    , ocrqp_offset    :: !Offset
-    , ocrqp_metadata  :: !ShortString
-    } deriving (Eq, Show, Generic)
-
-instance Serialize OffsetCommitRequestPayload
-
---
--- v1 (kafka 0.8.2)
---
-data OffsetCommitRequest_V1 = OffsetCommitRequest_V1
-    { ocrq1_consumerGroup   :: !ConsumerGroup
-    , ocrq1_groupGeneration :: !Int32
-    , ocrq1_consumerId      :: !ShortString
-    , ocrq1_payload         :: !(TopicKeyed OffsetCommitRequestPayload_V1)
-    } deriving (Eq, Show, Generic)
-
-instance Serialize OffsetCommitRequest_V1
-
-
-data OffsetCommitRequestPayload_V1 = OffsetCommitRequestPayload_V1
-    { ocrqp1_partition :: !Partition
-    , ocrqp1_offset    :: !Offset
-    , ocrqp1_timestamp :: !Int64
-    , ocrqp1_metadata  :: !ShortString
-    } deriving (Eq, Show, Generic)
-
-instance Serialize OffsetCommitRequestPayload_V1
-
-
---
--- v2 (kafka 0.8.3)
---
-data OffsetCommitRequest_V2 = OffsetCommitRequest_V2
-    { ocrqp2_consumerGroup   :: !ConsumerGroup
-    , ocrqp2_groupGeneration :: !Int32
-    , ocrqp2_consumerId      :: !ShortString
-    , ocrqp2_retentionTime   :: !Int64
-    , ocrqp2_payload         :: !(TopicKeyed OffsetCommitRequestPayload) -- payload is the same as v0
-    } deriving (Eq, Show, Generic)
-
-instance Serialize OffsetCommitRequest_V2
-
-
-data OffsetFetchRequest = OffsetFetchRequest
-    { ofrq_consumerGroup :: !ConsumerGroup
-    , ofrq_payload       :: !(TopicKeyed Partition)
-    } deriving (Eq, Show, Generic)
-
-instance Serialize OffsetFetchRequest
-
-
-data ConsumerMetadataRequest = ConsumerMetadataRequest
-    { cmrq_consumerGroup :: !ConsumerGroup
-    } deriving (Eq, Show, Generic)
-
-instance Serialize ConsumerMetadataRequest
-
-
-data HeartbeatRequest = HeartbeatRequest
-    { hrq_consumerGroup   :: !ConsumerGroup
-    , hrq_groupGeneration :: !Int32
-    , hrq_consumerId      :: !ShortString
-    } deriving (Eq, Show, Generic)
-
-instance Serialize HeartbeatRequest
-
-
-data JoinGroupRequest = JoinGroupRequest
-    { jgrq_consumerGroup               :: !ConsumerGroup
-    , jgrq_sessionTimeout              :: !Int32
-    , jgrq_topics                      :: !(Array TopicName)
-    , jgrq_consumerId                  :: !ShortString
-    , jgrq_partitionAssignmentStrategy :: !ShortString
-    } deriving (Eq, Show, Generic)
-
-instance Serialize JoinGroupRequest
-
-
-data Broker = Broker !NodeId !Host !Port
+newtype ProduceResponse = ProduceResponse (TopicKeyed ProduceResponsePayload)
     deriving (Eq, Show, Generic)
-
-instance Serialize Broker
-
-
-data TopicMetadata = TopicMetadata
-    { topic_errorCode     :: !ErrorCode
-    , topic_topic         :: !TopicName
-    , topic_partitionMeta :: !(Array PartitionMetadata)
-    } deriving (Eq, Show, Generic)
-
-instance Serialize TopicMetadata
-
-
-data PartitionMetadata = PartitionMetadata
-    { part_errorCode   :: !ErrorCode
-    , part_partitionId :: !Partition
-    , part_leader      :: !NodeId
-    , part_replicas    :: !(Array NodeId)
-    , part_isr         :: !(Array NodeId)
-    } deriving (Eq, Show, Generic)
-
-instance Serialize PartitionMetadata
-
 
 data ProduceResponsePayload = ProduceResponsePayload
     { prsp_partition :: !Partition
@@ -531,8 +396,34 @@ data ProduceResponsePayload = ProduceResponsePayload
     , prsp_offset    :: !Offset
     } deriving (Eq, Show, Generic)
 
+instance Serialize (ProduceRequest 1 0) where
+    put (ProduceRequest r t p) = put r *> put t *> put p
+    get = ProduceRequest <$> get <*> get <*> get
+
+instance Serialize ProduceRequestPayload
+instance Serialize ProduceResponse
 instance Serialize ProduceResponsePayload
 
+
+--
+-- Fetch
+--
+data FetchRequest (key :: Nat) (version :: Nat) where
+    FetchRequest :: { frq_replicaId   :: !NodeId
+                    , frq_maxWaitTime :: !Int32
+                    , frq_minBytes    :: !Int32
+                    , frq_topic       :: !TopicName
+                    , frq_partition   :: !Partition
+                    , frq_offset      :: !Int64
+                    , frq_maxBytes    :: !Int32
+                    }
+                 -> FetchRequest 1 0
+
+deriving instance Eq   (FetchRequest k v)
+deriving instance Show (FetchRequest k v)
+
+newtype FetchResponse = FetchResponse (TopicKeyed FetchResponsePayload)
+    deriving (Eq, Show, Generic)
 
 data FetchResponsePayload = FetchResponsePayload
     { frsp_partition      :: !Partition
@@ -542,8 +433,34 @@ data FetchResponsePayload = FetchResponsePayload
     , frsp_messageSet     :: !MessageSet
     } deriving (Eq, Show, Generic)
 
+instance Serialize (FetchRequest 1 0) where
+    put (FetchRequest r x minb t p o maxb) = put r *> put x *> put minb *> put t *> put p *> put o *> put maxb
+    get = FetchRequest <$> get <*> get <*> get <*> get <*> get <*> get <*> get
+
+instance Serialize FetchResponse
 instance Serialize FetchResponsePayload
 
+
+--
+-- Offset
+--
+data OffsetRequest (key :: Nat) (version :: Nat) where
+    OffsetRequest :: { orq_replicaId :: !NodeId
+                     , orq_payload   :: !(TopicKeyed OffsetRequestPayload)
+                     }
+                  -> OffsetRequest 2 0
+
+deriving instance Eq   (OffsetRequest k v)
+deriving instance Show (OffsetRequest k v)
+
+data OffsetRequestPayload = OffsetRequestPayload
+    { orqp_partition  :: !Partition
+    , orqp_time       :: !Int64
+    , orqp_maxOffsets :: !Int32
+    } deriving (Eq, Show, Generic)
+
+newtype OffsetResponse = OffsetResponse (TopicKeyed OffsetResponsePayload)
+    deriving (Eq, Show, Generic)
 
 data OffsetResponsePayload = OffsetResponsePayload
     { orsp_partition :: !Partition
@@ -551,16 +468,158 @@ data OffsetResponsePayload = OffsetResponsePayload
     , orsp_offsets   :: !(Array Offset)
     } deriving (Eq, Show, Generic)
 
+instance Serialize (OffsetRequest 2 0) where
+    put (OffsetRequest r p) = put r *> put p
+    get = OffsetRequest <$> get <*> get
+
+instance Serialize OffsetRequestPayload
+instance Serialize OffsetResponse
 instance Serialize OffsetResponsePayload
 
+
+--
+-- Metadata
+--
+data MetadataRequest (key :: Nat) (version :: Nat) where
+    MetadataRequest :: { mrq_topics :: !(Array TopicName) }
+                    -> MetadataRequest 3 0
+
+deriving instance Eq   (MetadataRequest k v)
+deriving instance Show (MetadataRequest k v)
+
+data MetadataResponse = MetadataResponse !(Array Broker) !(Array TopicMetadata)
+    deriving (Eq, Show, Generic)
+
+data Broker = Broker !NodeId !Host !Port
+    deriving (Eq, Show, Generic)
+
+data TopicMetadata = TopicMetadata
+    { topic_errorCode     :: !ErrorCode
+    , topic_topic         :: !TopicName
+    , topic_partitionMeta :: !(Array PartitionMetadata)
+    } deriving (Eq, Show, Generic)
+
+data PartitionMetadata = PartitionMetadata
+    { part_errorCode   :: !ErrorCode
+    , part_partitionId :: !Partition
+    , part_leader      :: !NodeId
+    , part_replicas    :: !(Array NodeId)
+    , part_isr         :: !(Array NodeId)
+    } deriving (Eq, Show, Generic)
+
+instance Serialize (MetadataRequest 3 0) where
+    put (MetadataRequest ts) = put ts
+    get = MetadataRequest <$> get
+
+instance Serialize MetadataResponse
+instance Serialize Broker
+instance Serialize TopicMetadata
+instance Serialize PartitionMetadata
+
+
+--
+-- OffsetCommit
+--
+data OffsetCommitRequest (key :: Nat) (version :: Nat) where
+    OffsetCommitRequest'V0 :: { ocrq0_consumerGroup :: !ConsumerGroup
+                              , ocrq0_payload       :: !(TopicKeyed (OffsetCommitRequestPayload 0))
+                              }
+                           -> OffsetCommitRequest 8 0
+
+    OffsetCommitRequest'V1 :: { ocrq1_consumerGroup :: !ConsumerGroup
+                              , ocrq1_generation    :: !Int32
+                              , ocrq1_consumerId    :: !ShortString
+                              , ocrq1_payload       :: !(TopicKeyed (OffsetCommitRequestPayload 1))
+                              }
+                           -> OffsetCommitRequest 8 1
+
+    OffsetCommitRequest'V2 :: { ocrq2_consumerGroup :: !ConsumerGroup
+                              , ocrq2_generation    :: !Int32
+                              , ocrq2_retention     :: !Int64
+                              , ocrq2_payload       :: !(TopicKeyed (OffsetCommitRequestPayload 0))
+                              }
+                           -> OffsetCommitRequest 8 2
+
+deriving instance Eq   (OffsetCommitRequest k v)
+deriving instance Show (OffsetCommitRequest k v)
+
+data OffsetCommitRequestPayload (version :: Nat) where
+    OffsetCommitRequestPayload'V0 :: { ocrqp_partition :: !Partition
+                                     , ocrqp_offset    :: !Offset
+                                     , ocrqp_metadata  :: !ShortString
+                                     }
+                                  -> OffsetCommitRequestPayload 0
+
+    OffsetCommitRequestPayload'V1 :: { ocrqp1_partition :: !Partition
+                                     , ocrqp1_offset    :: !Offset
+                                     , ocrqp1_timestamp :: !Int64
+                                     , ocrqp1_metadata  :: !ShortString
+                                     }
+                                  -> OffsetCommitRequestPayload 1
+
+deriving instance Eq   (OffsetCommitRequestPayload v)
+deriving instance Show (OffsetCommitRequestPayload v)
+
+newtype OffsetCommitResponse = OffsetCommitResponse (TopicKeyed OffsetCommitResponsePayload)
+    deriving (Eq, Show, Generic)
 
 data OffsetCommitResponsePayload = OffsetCommitResponsePayload
     { ocrsp_partition :: !Partition
     , ocrsp_errorCode :: !ErrorCode
     } deriving (Eq, Show, Generic)
 
+instance Serialize (OffsetCommitRequest 8 0) where
+    put (OffsetCommitRequest'V0 c p) = put c *> put p
+    get = OffsetCommitRequest'V0 <$> get <*> get
+
+instance Serialize (OffsetCommitRequest 8 1) where
+    put (OffsetCommitRequest'V1 cg g c p) = put cg *> put g *> put c *> put p
+    get = OffsetCommitRequest'V1 <$> get <*> get <*> get <*> get
+
+instance Serialize (OffsetCommitRequest 8 2) where
+    put (OffsetCommitRequest'V2 cg g r p) = put cg *> put g *> put r *> put p
+    get = OffsetCommitRequest'V2 <$> get <*> get <*> get <*> get
+
+instance Serialize (OffsetCommitRequestPayload 0) where
+    put (OffsetCommitRequestPayload'V0 p o m) = put p *> put o *> put m
+    get = OffsetCommitRequestPayload'V0 <$> get <*> get <*> get
+
+instance Serialize (OffsetCommitRequestPayload 1) where
+    put (OffsetCommitRequestPayload'V1 p o t m) = put p *> put o *> put t *> put m
+    get = OffsetCommitRequestPayload'V1 <$> get <*> get <*> get <*> get
+
+instance Serialize OffsetCommitResponse
 instance Serialize OffsetCommitResponsePayload
 
+
+--
+-- OffsetFetch
+--
+
+-- | Note that:
+--
+-- @
+-- version 0 and 1 have exactly the same wire format, but different functionality.
+-- version 0 will read the offsets from ZK and version 1 will read the offsets from Kafka.
+-- @
+--
+-- (cf.  <https://github.com/apache/kafka/blob/0.8.2/core/src/main/scala/kafka/api/OffsetFetchRequest.scala>)
+data OffsetFetchRequest (key :: Nat) (version :: Nat) where
+    OffsetFetchRequest'V0 :: { ofrq_consumerGroup :: !ConsumerGroup
+                             , ofrq_payload       :: !(TopicKeyed Partition)
+                             }
+                          -> OffsetFetchRequest 9 0
+
+    OffsetFetchRequest'V1 :: { ofrq1_consumerGroup :: !ConsumerGroup
+                             , ofrq1_payload       :: !(TopicKeyed Partition)
+                             }
+                          -> OffsetFetchRequest 9 1
+
+deriving instance Eq   (OffsetFetchRequest k v)
+deriving instance Show (OffsetFetchRequest k v)
+
+newtype OffsetFetchResponse = OffsetFetchResponse (TopicKeyed OffsetFetchResponsePayload)
+    deriving (Eq, Show, Generic)
 
 data OffsetFetchResponsePayload = OffsetFetchResponsePayload
     { ofrsp_partition :: !Partition
@@ -569,29 +628,88 @@ data OffsetFetchResponsePayload = OffsetFetchResponsePayload
     , ofrsp_errorCode :: !ErrorCode
     } deriving (Eq, Show, Generic)
 
+instance Serialize (OffsetFetchRequest 9 0) where
+    put (OffsetFetchRequest'V0 g p) = put g *> put p
+    get = OffsetFetchRequest'V0 <$> get <*> get
+
+instance Serialize (OffsetFetchRequest 9 1) where
+    put (OffsetFetchRequest'V1 g p) = put g *> put p
+    get = OffsetFetchRequest'V1 <$> get <*> get
+
+instance Serialize OffsetFetchResponse
 instance Serialize OffsetFetchResponsePayload
 
 
-data JoinGroupResponsePayload = JoinGroupResponsePayload
-    { jgrsp_errorCode          :: !ErrorCode
-    , jgrsp_groupGeneration    :: !Int32
-    , jgrsp_consumerId         :: !ShortString
-    , jgrsp_assignedPartitions :: !(TopicKeyed Partition)
+--
+-- ConsumerMetadata
+--
+data ConsumerMetadataRequest (key :: Nat) (version :: Nat) where
+    ConsumerMetadataRequest :: { cmrq_consumerGroup :: !ConsumerGroup }
+                            -> ConsumerMetadataRequest 10 0
+
+deriving instance Eq   (ConsumerMetadataRequest k v)
+deriving instance Show (ConsumerMetadataRequest k v)
+
+data ConsumerMetadataResponse = ConsumerMetadataResponse
+    { cmrs_errorCode       :: !ErrorCode
+    , cmrs_coordinatorId   :: !Int32
+    , cmrs_coordinatorHost :: !Host
+    , cmrs_coordinatorPort :: !Port
     } deriving (Eq, Show, Generic)
 
-instance Serialize JoinGroupResponsePayload
+instance Serialize (ConsumerMetadataRequest 10 0) where
+    put (ConsumerMetadataRequest g) = put g
+    get = ConsumerMetadataRequest <$> get
 
+instance Serialize ConsumerMetadataResponse
 
-data Response
-    = MetadataResponse         !(Array Broker) !(Array TopicMetadata)
-    | ProduceResponse          !(TopicKeyed ProduceResponsePayload)
-    | FetchResponse            !(TopicKeyed FetchResponsePayload)
-    | OffsetResponse           !(TopicKeyed OffsetResponsePayload)
-    | ConsumerMetadataResponse !ErrorCode !NodeId !Host !Port
-    | OffsetCommitResponse     !(TopicKeyed OffsetResponsePayload)
-    | OffsetFetchResponse      !(TopicKeyed OffsetResponsePayload)
-    | HeartbeatResponse        !ErrorCode
-    | JoinGroupResponse        !JoinGroupResponsePayload
+--
+-- Heartbeat
+--
+data HeartbeatRequest (key :: Nat) (version :: Nat) where
+    HeartbeatRequest :: { hrq_consumerGroup   :: !ConsumerGroup
+                        , hrq_groupGeneration :: !Int32
+                        , hrq_consumerId      :: !ShortString
+                        }
+                     -> HeartbeatRequest 12 0
+
+deriving instance Eq   (HeartbeatRequest k v)
+deriving instance Show (HeartbeatRequest k v)
+
+newtype HeartbeatResponse = HeartbeatResponse ErrorCode
     deriving (Eq, Show, Generic)
 
-instance Serialize Response
+instance Serialize (HeartbeatRequest 12 0) where
+    put (HeartbeatRequest cg g c) = put cg *> put g *> put c
+    get = HeartbeatRequest <$> get <*> get <*> get
+
+instance Serialize HeartbeatResponse
+
+
+--
+-- JoinGroup
+--
+data JoinGroupRequest (key :: Nat) (version :: Nat) where
+    JoinGroupRequest :: { jgrq_consumerGroup               :: !ConsumerGroup
+                        , jgrq_sessionTimeout              :: !Int32
+                        , jgrq_topics                      :: !(Array TopicName)
+                        , jgrq_consumerId                  :: !ShortString
+                        , jgrq_partitionAssignmentStrategy :: !ShortString
+                        }
+                     -> JoinGroupRequest 11 0
+
+deriving instance Eq   (JoinGroupRequest k v)
+deriving instance Show (JoinGroupRequest k v)
+
+data JoinGroupResponse = JoinGroupResponse
+    { jgrs_errorCode          :: !ErrorCode
+    , jgrs_groupGeneration    :: !Int32
+    , jgrs_consumerId         :: !ShortString
+    , jgrs_assignedPartitions :: !(TopicKeyed Partition)
+    } deriving (Eq, Show, Generic)
+
+instance Serialize (JoinGroupRequest 11 0) where
+    put (JoinGroupRequest cg s t c p) = put cg *> put s *> put t *> put c *> put p
+    get = JoinGroupRequest <$> get <*> get <*> get <*> get <*> get
+
+instance Serialize JoinGroupResponse
