@@ -14,6 +14,20 @@ cabal-version:       >=1.10
 library
   exposed-modules:
       Network.Kafka.Protocol
+    , Network.Kafka.Protocol.ConsumerMetadata
+    , Network.Kafka.Protocol.Fetch
+    , Network.Kafka.Protocol.Heartbeat
+    , Network.Kafka.Protocol.Instances
+    , Network.Kafka.Protocol.JoinGroup
+    , Network.Kafka.Protocol.Message
+    , Network.Kafka.Protocol.Metadata
+    , Network.Kafka.Protocol.OffsetCommit
+    , Network.Kafka.Protocol.OffsetFetch
+    , Network.Kafka.Protocol.Primitive
+    , Network.Kafka.Protocol.Produce
+    , Network.Kafka.Protocol.Request
+    , Network.Kafka.Protocol.Response
+    , Network.Kafka.Protocol.Universe
 
   other-modules:
       Network.Kafka.Internal
@@ -22,8 +36,11 @@ library
       base == 4.*
     , bytestring
     , cereal
+    , lens
+    , singletons
     , text
     , vector
+    , vinyl
 
   default-language:  Haskell2010
   hs-source-dirs:    src
