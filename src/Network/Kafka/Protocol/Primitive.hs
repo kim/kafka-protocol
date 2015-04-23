@@ -3,7 +3,7 @@
 
 module Network.Kafka.Protocol.Primitive
     ( Bytes       (..)
-    , ShortString
+    , ShortString (fromShortString)
     , Array       (..)
     , ErrorCode   (..)
     , sstr

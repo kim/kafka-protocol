@@ -18,6 +18,7 @@ library
     , Network.Kafka.Protocol.Fetch
     , Network.Kafka.Protocol.Heartbeat
     , Network.Kafka.Protocol.Instances
+    , Network.Kafka.Protocol.Internal
     , Network.Kafka.Protocol.JoinGroup
     , Network.Kafka.Protocol.Message
     , Network.Kafka.Protocol.Metadata
@@ -28,9 +29,6 @@ library
     , Network.Kafka.Protocol.Request
     , Network.Kafka.Protocol.Response
     , Network.Kafka.Protocol.Universe
-
-  other-modules:
-      Network.Kafka.Internal
 
   build-depends:
       base == 4.*

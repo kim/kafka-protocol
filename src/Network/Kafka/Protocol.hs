@@ -2,6 +2,8 @@
 -- License, v. 2.0. If a copy of the MPL was not distributed with this
 -- file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+{-# LANGUAGE TypeFamilies #-}
+
 
 -- | Implementation of the <http://kafka.apache.org Kafka> wire protocol
 --
@@ -10,6 +12,8 @@
 module Network.Kafka.Protocol
     ( module Export
     , module Data.Vinyl
+
+    , fields
     )
 where
 
@@ -28,3 +32,4 @@ import Network.Kafka.Protocol.Produce          as Export
 import Network.Kafka.Protocol.Request          as Export
 import Network.Kafka.Protocol.Response         as Export
 import Network.Kafka.Protocol.Universe         as Export
+import Network.Kafka.Protocol.Internal

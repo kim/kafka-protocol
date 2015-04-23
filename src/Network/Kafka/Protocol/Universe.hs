@@ -12,6 +12,10 @@ import Network.Kafka.Protocol.Primitive
 type TopicName     = ShortString
 type TopicKeyed a  = Array (TopicName, Array a)
 type Partition     = Word32
+type NodeId        = Word32
+type Host          = ShortString
+type Port          = Word32
+
 
 type FConsumerGroup = '("consumer_group", ShortString)
 type FConsumerId    = '("consumer_id"   , ShortString)

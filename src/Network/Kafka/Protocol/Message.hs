@@ -9,7 +9,7 @@ import           Data.Int
 import           Data.Maybe                       (fromMaybe)
 import           Data.Serialize
 import           GHC.Generics
-import           Network.Kafka.Internal
+import           Network.Kafka.Protocol.Internal
 import           Network.Kafka.Protocol.Primitive
 
 
