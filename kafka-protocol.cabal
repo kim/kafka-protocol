@@ -22,6 +22,7 @@ library
     , Network.Kafka.Protocol.JoinGroup
     , Network.Kafka.Protocol.Message
     , Network.Kafka.Protocol.Metadata
+    , Network.Kafka.Protocol.Offset
     , Network.Kafka.Protocol.OffsetCommit
     , Network.Kafka.Protocol.OffsetFetch
     , Network.Kafka.Protocol.Primitive
