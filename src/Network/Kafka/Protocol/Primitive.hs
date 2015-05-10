@@ -1,5 +1,9 @@
-{-# LANGUAGE OverloadedLists #-}
-{-# LANGUAGE TypeFamilies    #-}
+{-# LANGUAGE DeriveFoldable             #-}
+{-# LANGUAGE DeriveTraversable          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedLists            #-}
+{-# LANGUAGE TypeFamilies               #-}
+
 
 module Network.Kafka.Protocol.Primitive
     ( Bytes       (..)
@@ -14,12 +18,14 @@ where
 import           Control.Applicative
 import           Data.ByteString     (ByteString)
 import qualified Data.ByteString     as BS
+import           Data.Foldable       hiding (toList)
 import           Data.Int
 import           Data.Maybe          (fromMaybe)
 import           Data.Serialize
 import           Data.Text           (Text)
 import qualified Data.Text           as T
 import           Data.Text.Encoding
+import           Data.Traversable
 import           Data.Vector         (Vector)
 import qualified Data.Vector         as V
 import           GHC.Exts
@@ -70,7 +76,7 @@ instance IsString ShortString where
     fromString = unsafeSStr . T.pack
 
 newtype Array a = Array { fromArray :: Vector a }
-    deriving (Eq, Show)
+    deriving (Eq, Show, Functor, Foldable, Traversable)
 
 instance IsList (Array a) where
     type Item (Array a) = a
