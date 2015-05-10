@@ -5,7 +5,6 @@
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE KindSignatures        #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TemplateHaskell       #-}
@@ -15,8 +14,6 @@
 module Network.Kafka.Protocol.Metadata
     ( MetadataRequest
     , MetadataRequestFields
-    , metadataRequest
-
     , MetadataResponse
     , MetadataResponseFields
 
@@ -51,7 +48,6 @@ import Data.Proxy
 import Data.Serialize
 import Data.Vinyl
 import GHC.Generics
-import GHC.TypeLits
 import Network.Kafka.Protocol.Instances ()
 import Network.Kafka.Protocol.Primitive
 import Network.Kafka.Protocol.Universe
@@ -78,12 +74,8 @@ replicas :: Proxy FReplicas
 replicas = Proxy
 
 
-type PartitionMetadataFields = '[ FErrorCode
-                                , FPartition
-                                , FLeader
-                                , FReplicas
-                                , FISR
-                                ]
+type PartitionMetadataFields
+    = '[ FErrorCode, FPartition, FLeader, FReplicas, FISR ]
 
 newtype PartitionMetadata = PartitionMetadata (FieldRec PartitionMetadataFields)
     deriving (Eq, Show, Generic)
@@ -108,17 +100,7 @@ instance Serialize TopicMetadata
 
 
 type MetadataRequestFields = '[ FTopics ]
-
--- key: 3, version: 0
-newtype MetadataRequest (key :: Nat) (version :: Nat)
-    = MetadataRequest (FieldRec MetadataRequestFields)
-    deriving (Eq, Show, Generic)
-
-makeWrapped ''MetadataRequest
-instance forall k v. (KnownNat k, KnownNat v) => Serialize (MetadataRequest k v)
-
-metadataRequest :: FieldRec MetadataRequestFields -> MetadataRequest 3 0
-metadataRequest = MetadataRequest
+type MetadataRequest       = Req 4 0 MetadataRequestFields
 
 
 type FBrokers       = '("brokers"       , Array Broker)
@@ -131,9 +113,4 @@ topicMetadata :: Proxy FTopicMetadata
 topicMetadata = Proxy
 
 type MetadataResponseFields = '[ FBrokers, FTopicMetadata ]
-
-newtype MetadataResponse = MetadataResponse (FieldRec MetadataResponseFields)
-    deriving (Eq, Show, Generic)
-
-makeWrapped ''MetadataResponse
-instance Serialize MetadataResponse
+type MetadataResponse       = Resp MetadataResponseFields

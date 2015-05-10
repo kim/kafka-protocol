@@ -5,9 +5,7 @@
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE KindSignatures        #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE TypeFamilies          #-}
 
@@ -15,15 +13,10 @@
 module Network.Kafka.Protocol.Offset
     ( OffsetRequest
     , OffsetRequestFields
-    , offsetRequest
-
     , OffsetRequestPayload
     , OffsetRequestPayloadFields
-    , offsetRequestPayload
-
     , OffsetResponse
     , OffsetResponseFields
-
     , OffsetResponsePayload
     , OffsetResponsePayloadFields
 
@@ -42,22 +35,13 @@ import Data.Serialize
 import Data.Vinyl
 import Data.Word
 import GHC.Generics
-import GHC.TypeLits
 import Network.Kafka.Protocol.Instances ()
 import Network.Kafka.Protocol.Primitive
 import Network.Kafka.Protocol.Universe
 
 
 type OffsetRequestFields = '[ FReplicaId, FPayload OffsetRequestPayload ]
-
-newtype OffsetRequest (key :: Nat) (version :: Nat)
-    = OffsetRequest (FieldRec OffsetRequestFields)
-    deriving (Eq, Show, Generic)
-
-instance forall k v. (KnownNat k, KnownNat v) => Serialize (OffsetRequest k v)
-
-offsetRequest :: FieldRec OffsetRequestFields -> OffsetRequest 2 0
-offsetRequest = OffsetRequest
+type OffsetRequest       = Req 2 0 OffsetRequestFields
 
 
 type FMaxOffsets = '("max_offsets", Word32)
@@ -69,28 +53,12 @@ maxOffsets = Proxy
 time :: Proxy FTime
 time = Proxy
 
-
 type OffsetRequestPayloadFields = '[ FPartition, FTime, FMaxOffsets ]
-
-newtype OffsetRequestPayload
-    = OffsetRequestPayload (FieldRec OffsetRequestPayloadFields)
-    deriving (Eq, Show, Generic)
-
-instance Serialize OffsetRequestPayload
-
-makeWrapped ''OffsetRequest
-makeWrapped ''OffsetRequestPayload
-
-offsetRequestPayload :: FieldRec OffsetRequestPayloadFields -> OffsetRequestPayload
-offsetRequestPayload = OffsetRequestPayload
+type OffsetRequestPayload       = FieldRec OffsetRequestPayloadFields
 
 
 type OffsetResponseFields = '[ FPayload OffsetRequestPayload ]
-
-newtype OffsetResponse = OffsetResponse (FieldRec OffsetResponseFields)
-    deriving (Eq, Show, Generic)
-
-instance Serialize OffsetResponse
+type OffsetResponse       = Resp OffsetResponseFields
 
 
 type FOffsets = '("offsets", Array Word64)
@@ -107,5 +75,4 @@ newtype OffsetResponsePayload
 
 instance Serialize OffsetResponsePayload
 
-makeWrapped ''OffsetResponse
 makeWrapped ''OffsetResponsePayload

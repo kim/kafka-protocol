@@ -5,9 +5,7 @@
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE KindSignatures        #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE TypeFamilies          #-}
 
@@ -15,11 +13,9 @@
 module Network.Kafka.Protocol.Produce
     ( ProduceRequest
     , ProduceRequestFields
-    , produceRequest
 
     , ProduceRequestPayload
     , ProduceRequestPayloadFields
-    , produceRequestPayload
 
     , ProduceResponse
     , ProduceResponseFields
@@ -40,7 +36,6 @@ import Data.Serialize
 import Data.Vinyl
 import Data.Word
 import GHC.Generics
-import GHC.TypeLits
 import Network.Kafka.Protocol.Instances ()
 import Network.Kafka.Protocol.Universe
 
@@ -55,43 +50,18 @@ timeout :: Proxy FTimeout
 timeout = Proxy
 
 
-type ProduceRequestFields = '[ FRequiredAcks
-                             , FTimeout
-                             , FPayload ProduceRequestPayload
-                             ]
-
-newtype ProduceRequest (key :: Nat) (version :: Nat)
-    = ProduceRequest (FieldRec ProduceRequestFields)
-    deriving (Eq, Show, Generic)
-
-instance forall k v. (KnownNat k, KnownNat v) => Serialize (ProduceRequest k v)
-
-produceRequest :: FieldRec ProduceRequestFields -> ProduceRequest 0 0
-produceRequest = ProduceRequest
+type ProduceRequestFields
+    = '[ FRequiredAcks, FTimeout, FPayload ProduceRequestPayload ]
+type ProduceRequest = Req 0 0 ProduceRequestFields
 
 
 type ProduceRequestPayloadFields = '[ FPartition, FSize, FMessageSet ]
-
-newtype ProduceRequestPayload
-    = ProduceRequestPayload (FieldRec ProduceRequestPayloadFields)
-    deriving (Eq, Show, Generic)
-
-instance Serialize ProduceRequestPayload
-
-produceRequestPayload :: FieldRec ProduceRequestPayloadFields
-                      -> ProduceRequestPayload
-produceRequestPayload = ProduceRequestPayload
-
-makeWrapped ''ProduceRequest
-makeWrapped ''ProduceRequestPayload
+type ProduceRequestPayload       = FieldRec ProduceRequestPayloadFields
 
 
 type ProduceResponseFields ='[ FPayload ProduceResponsePayload ]
+type ProduceResponse       = Resp ProduceResponseFields
 
-newtype ProduceResponse = ProduceResponse (FieldRec ProduceResponseFields)
-    deriving (Eq, Show, Generic)
-
-instance Serialize ProduceResponse
 
 type ProduceResponsePayloadFields = '[ FPartition, FErrorCode, FOffset ]
 
@@ -101,5 +71,4 @@ newtype ProduceResponsePayload
 
 instance Serialize ProduceResponsePayload
 
-makeWrapped ''ProduceResponse
 makeWrapped ''ProduceResponsePayload

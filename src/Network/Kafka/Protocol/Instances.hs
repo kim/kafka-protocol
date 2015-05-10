@@ -23,8 +23,8 @@ instance forall s t. (KnownSymbol s, Serialize t) => Serialize (ElField '(s,t)) 
     get = Field <$> get
 
 instance Serialize (Rec f '[]) where
-    put RNil = return ()
-    get = return RNil
+    put RNil = pure ()
+    get = pure RNil
 
 instance (Serialize (f r), Serialize (Rec f rs)) => Serialize (Rec f (r ': rs)) where
     put (!x :& xs) = put x *> put xs

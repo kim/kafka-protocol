@@ -1,3 +1,7 @@
+-- This Source Code Form is subject to the terms of the Mozilla Public
+-- License, v. 2.0. If a copy of the MPL was not distributed with this
+-- file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -13,6 +17,7 @@ import           Data.Serialize
 import           GHC.Generics
 import           GHC.TypeLits
 import           Network.Kafka.Protocol.Primitive
+import           Network.Kafka.Protocol.Universe
 
 
 data Request a = Request
@@ -37,11 +42,11 @@ instance Serialize a => Serialize (Request a) where
       where
         get' = Request <$> get <*> get <*> get <*> get <*> get
 
-mkRequest :: (KnownNat key, KnownNat version, Show (a key version))
+mkRequest :: (KnownNat key, KnownNat version)
           => Int32
           -> ShortString
-          -> a key version
-          -> Request (a key version)
+          -> Req key version a
+          -> Request (Req key version a)
 mkRequest correlationId clientId rq = Request
     { rq_apiKey        = apiKey rq
     , rq_apiVersion    = apiVersion rq
@@ -55,8 +60,8 @@ newtype ApiKey = ApiKey Int16
 
 instance Serialize ApiKey
 
-apiKey :: forall a key version. (KnownNat key, KnownNat version)
-       => a key version
+apiKey :: forall key version a. (KnownNat key, KnownNat version)
+       => Req key version a
        -> ApiKey
 apiKey _ = ApiKey . fromInteger $ natVal (Proxy :: Proxy key)
 
@@ -66,7 +71,7 @@ newtype ApiVersion = ApiVersion Int16
 
 instance Serialize ApiVersion
 
-apiVersion :: forall a key version. (KnownNat key, KnownNat version)
-            => a key version
+apiVersion :: forall key version a. (KnownNat key, KnownNat version)
+            => Req key version a
             -> ApiVersion
 apiVersion _ = ApiVersion . fromInteger $ natVal (Proxy :: Proxy version)

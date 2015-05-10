@@ -1,12 +1,44 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE UndecidableInstances #-}
+
 
 module Network.Kafka.Protocol.Universe
 where
 
+import Control.Lens
+import Data.Vinyl
 import Data.Proxy
+import Data.Serialize
 import Data.Word
+import GHC.Generics
+import GHC.TypeLits
 import Network.Kafka.Protocol.Message
 import Network.Kafka.Protocol.Primitive
+
+
+newtype Req (k :: Nat) (v :: Nat) a = Req { reqFields :: FieldRec a }
+    deriving (Show, Generic)
+
+instance (KnownNat k, KnownNat v, Serialize (FieldRec a)) => Serialize (Req k v a)
+
+instance (KnownNat k, KnownNat v) => Wrapped (Req k v a) where
+    type Unwrapped (Req k v a) = FieldRec a
+    _Wrapped' = iso reqFields Req
+
+
+newtype Resp a = Resp { respFields :: FieldRec a }
+    deriving (Show, Generic)
+
+instance Serialize (FieldRec a) => Serialize (Resp a)
+
+instance Wrapped (Resp a) where
+    type Unwrapped (Resp a) = FieldRec a
+    _Wrapped' = iso respFields Resp
 
 
 type TopicName     = ShortString
