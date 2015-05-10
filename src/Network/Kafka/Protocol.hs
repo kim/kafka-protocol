@@ -10,7 +10,21 @@
 -- cf. <https://cwiki.apache.org/confluence/display/KAFKA/A+Guide+To+The+Kafka+Protocol>
 --
 module Network.Kafka.Protocol
-    ( module Export
+    ( module Network.Kafka.Protocol.ConsumerMetadata
+    , module Network.Kafka.Protocol.Fetch
+    , module Network.Kafka.Protocol.Heartbeat
+    , module Network.Kafka.Protocol.JoinGroup
+    , module Network.Kafka.Protocol.Message
+    , module Network.Kafka.Protocol.Metadata
+    , module Network.Kafka.Protocol.Offset
+    , module Network.Kafka.Protocol.OffsetCommit
+    , module Network.Kafka.Protocol.OffsetFetch
+    , module Network.Kafka.Protocol.Primitive
+    , module Network.Kafka.Protocol.Produce
+    , module Network.Kafka.Protocol.Request
+    , module Network.Kafka.Protocol.Response
+    , module Network.Kafka.Protocol.Universe
+
     , module Data.Vinyl
 
     , fields
@@ -18,18 +32,18 @@ module Network.Kafka.Protocol
 where
 
 import Data.Vinyl
-import Network.Kafka.Protocol.ConsumerMetadata as Export
-import Network.Kafka.Protocol.Fetch            as Export
-import Network.Kafka.Protocol.Heartbeat        as Export
-import Network.Kafka.Protocol.JoinGroup        as Export
-import Network.Kafka.Protocol.Message          as Export
-import Network.Kafka.Protocol.Metadata         as Export
-import Network.Kafka.Protocol.Offset           as Export
-import Network.Kafka.Protocol.OffsetCommit     as Export
-import Network.Kafka.Protocol.OffsetFetch      as Export
-import Network.Kafka.Protocol.Primitive        as Export
-import Network.Kafka.Protocol.Produce          as Export
-import Network.Kafka.Protocol.Request          as Export
-import Network.Kafka.Protocol.Response         as Export
-import Network.Kafka.Protocol.Universe         as Export
-import Network.Kafka.Protocol.Internal
+import Network.Kafka.Protocol.ConsumerMetadata
+import Network.Kafka.Protocol.Fetch
+import Network.Kafka.Protocol.Heartbeat
+import Network.Kafka.Protocol.JoinGroup
+import Network.Kafka.Protocol.Message
+import Network.Kafka.Protocol.Metadata
+import Network.Kafka.Protocol.Offset
+import Network.Kafka.Protocol.OffsetCommit
+import Network.Kafka.Protocol.OffsetFetch
+import Network.Kafka.Protocol.Primitive
+import Network.Kafka.Protocol.Produce
+import Network.Kafka.Protocol.Request
+import Network.Kafka.Protocol.Response
+import Network.Kafka.Protocol.Universe
+import Network.Kafka.Protocol.Internal         (fields)
